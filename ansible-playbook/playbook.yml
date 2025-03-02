@@ -99,4 +99,47 @@
     - name: Restart Promtail
       shell: nohup /usr/local/bin/promtail --config.file=/etc/promtail/promtail-config.yml >/dev/null 2>&1 &
       when: "'Promtail-Server' in instance_name.stdout"
+- name: Install and configure CloudWatch Agent
+  hosts: localhost
+  become: yes
+  tasks:
+    - name: Install AWS CLI
+      apt:
+        name: awscli
+        state: present
+
+    - name: Install CloudWatch Agent
+      shell: |
+        curl -O https://amazoncloudwatch-agent.s3.amazonaws.com/ubuntu/amd64/latest/amazon-cloudwatch-agent.deb
+        dpkg -i amazon-cloudwatch-agent.deb
+
+    - name: Create CloudWatch Agent Configuration
+      copy:
+        dest: /opt/aws/amazon-cloudwatch-agent/bin/config.json
+        content: |
+          {
+            "agent": {
+              "metrics_collection_interval": 60,
+              "logfile": "/opt/aws/amazon-cloudwatch-agent/logs/amazon-cloudwatch-agent.log"
+            },
+            "metrics": {
+              "append_dimensions": {
+                "InstanceId": "${aws:InstanceId}"
+              },
+              "metrics_collected": {
+                "cpu": {
+                  "measurement": ["cpu_usage_idle", "cpu_usage_user", "cpu_usage_system"],
+                  "metrics_collection_interval": 60
+                },
+                "mem": {
+                  "measurement": ["mem_used_percent"],
+                  "metrics_collection_interval": 60
+                }
+              }
+            }
+          }
+
+    - name: Start CloudWatch Agent
+      shell: |
+        amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -c file:/opt/aws/amazon-cloudwatch-agent/bin/config.json -s
 
