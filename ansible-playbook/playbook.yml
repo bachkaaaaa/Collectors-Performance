@@ -1,0 +1,102 @@
+- name: Install log shippers and generate logs
+  hosts: localhost
+  become: yes
+  tasks:
+    - name: Get instance name from metadata
+      shell: curl -s http://169.254.169.254/latest/meta-data/tags/instance/Name
+      register: instance_name
+
+    - name: Install Fluent Bit
+      apt:
+        name: fluent-bit
+        state: present
+      when: "'FluentBit-Server' in instance_name.stdout"
+
+    - name: Install Filebeat
+      apt:
+        name: filebeat
+        state: present
+      when: "'Filebeat-Server' in instance_name.stdout"
+
+    - name: Install Promtail
+      get_url:
+        url: https://github.com/grafana/loki/releases/latest/download/promtail-linux-amd64.zip
+        dest: /usr/local/bin/promtail
+        mode: '0755'
+      when: "'Promtail-Server' in instance_name.stdout"
+
+    - name: Create a log generator script
+      copy:
+        dest: /usr/local/bin/log_generator.sh
+        mode: '0755'
+        content: |
+          #!/bin/bash
+          while true; do
+            echo "$(date) - Test log entry $(uuidgen)" >> /var/log/test.log
+            sleep 0.1
+          done
+
+    - name: Start log generator script in background
+      shell: nohup /usr/local/bin/log_generator.sh >/dev/null 2>&1 &
+
+    - name: Configure Fluent Bit to read logs
+      copy:
+        dest: /etc/fluent-bit/fluent-bit.conf
+        content: |
+          [SERVICE]
+              Flush        1
+              Daemon       Off
+              Log_Level    info
+          [INPUT]
+              Name        tail
+              Path        /var/log/test.log
+              Tag         test_log
+          [OUTPUT]
+              Name        stdout
+              Match       test_log
+      when: "'FluentBit-Server' in instance_name.stdout"
+
+    - name: Restart Fluent Bit
+      shell: systemctl restart fluent-bit
+      when: "'FluentBit-Server' in instance_name.stdout"
+
+    - name: Configure Filebeat to read logs
+      copy:
+        dest: /etc/filebeat/filebeat.yml
+        content: |
+          filebeat.inputs:
+            - type: log
+              paths:
+                - /var/log/test.log
+          output.console:
+            enabled: true
+      when: "'Filebeat-Server' in instance_name.stdout"
+
+    - name: Restart Filebeat
+      shell: systemctl restart filebeat
+      when: "'Filebeat-Server' in instance_name.stdout"
+
+    - name: Configure Promtail to read logs
+      copy:
+        dest: /etc/promtail/promtail-config.yml
+        content: |
+          server:
+            http_listen_port: 9080
+          positions:
+            filename: /tmp/positions.yaml
+          clients:
+            - url: http://localhost:3100/loki/api/v1/push
+          scrape_configs:
+            - job_name: "varlogs"
+              static_configs:
+                - targets:
+                    - localhost
+                  labels:
+                    job: "test_log"
+                    __path__: /var/log/test.log
+      when: "'Promtail-Server' in instance_name.stdout"
+
+    - name: Restart Promtail
+      shell: nohup /usr/local/bin/promtail --config.file=/etc/promtail/promtail-config.yml >/dev/null 2>&1 &
+      when: "'Promtail-Server' in instance_name.stdout"
+
