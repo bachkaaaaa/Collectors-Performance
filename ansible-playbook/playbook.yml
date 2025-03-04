@@ -1,59 +1,54 @@
-- name: Install log shippers and generate logs
+---
+- name: Install log shippers, CloudWatch Agent, and generate logs
   hosts: localhost
   become: yes
+  vars:
+    fluent_bit_version: "2.2.1"  # Update to latest if needed
+    promtail_version: "2.9.5"    # Update to latest if needed
+    filebeat_version: "8.12.0"   # Update to latest if needed
+    loki_url: "http://localhost:3100"  # Replace with your Loki URL
+    elastic_url: "http://your-elastic-host:9200"  # Replace with your Elasticsearch URL
+
   tasks:
     - name: Get instance name from metadata
       shell: curl -s http://169.254.169.254/latest/meta-data/tags/instance/Name
       register: instance_name
+      tags: always
 
     - name: Install required dependencies
       yum:
-        name: 
+        name:
           - wget
           - unzip
+          - awscli
+          - python3-pip
         state: present
+      tags:
+        - dependencies
+        - fluentbit
+        - filebeat
+        - promtail
+        - cloudwatch
+
+    # --- Fluent Bit Tasks ---
+    - name: Add Fluent Bit repository
+      yum_repository:
+        name: fluent-bit
+        description: Fluent Bit
+        baseurl: "https://packages.fluentbit.io/amazonlinux/{{ ansible_distribution_major_version }}/"
+        gpgcheck: yes
+        gpgkey: "https://packages.fluentbit.io/fluentbit.key"
+        enabled: yes
+      when: "'FluentBit-Server' in instance_name.stdout"
+      tags: fluentbit
 
     - name: Install Fluent Bit
       yum:
-        name: fluent-bit
+        name: "fluent-bit-{{ fluent_bit_version }}"
         state: present
+        update_cache: yes
       when: "'FluentBit-Server' in instance_name.stdout"
-
-    - name: Download and Install Filebeat
-      block:
-        - name: Download Filebeat RPM
-          get_url:
-            url: https://artifacts.elastic.co/downloads/beats/filebeat/filebeat-7.x.rpm
-            dest: /tmp/filebeat.rpm
-          when: "'Filebeat-Server' in instance_name.stdout"
-        
-        - name: Install Filebeat
-          yum:
-            name: /tmp/filebeat.rpm
-            state: present
-          when: "'Filebeat-Server' in instance_name.stdout"
-
-    - name: Install Promtail
-      unarchive:
-        src: https://github.com/grafana/loki/releases/latest/download/promtail-linux-amd64.zip
-        dest: /usr/local/bin
-        remote_src: yes
-        mode: '0755'
-      when: "'Promtail-Server' in instance_name.stdout"
-
-    - name: Create a log generator script
-      copy:
-        dest: /usr/local/bin/log_generator.sh
-        mode: '0755'
-        content: |
-          #!/bin/bash
-          while true; do
-            echo "$(date) - Test log entry" >> /var/log/test.log
-            sleep 0.1
-          done
-
-    - name: Start log generator script in background
-      shell: nohup /usr/local/bin/log_generator.sh >/dev/null 2>&1 &
+      tags: fluentbit
 
     - name: Configure Fluent Bit to read logs
       copy:
@@ -71,6 +66,8 @@
               Name        stdout
               Match       test_log
       when: "'FluentBit-Server' in instance_name.stdout"
+      notify: Restart Fluent Bit
+      tags: fluentbit
 
     - name: Ensure Fluent Bit service is enabled and started
       systemd:
@@ -78,6 +75,27 @@
         enabled: yes
         state: started
       when: "'FluentBit-Server' in instance_name.stdout"
+      tags: fluentbit
+
+    # --- Filebeat Tasks ---
+    - name: Add Elastic repository for Filebeat
+      yum_repository:
+        name: elastic-8.x
+        description: Elastic repository for 8.x packages
+        baseurl: "https://artifacts.elastic.co/packages/8.x/yum"
+        gpgcheck: yes
+        gpgkey: "https://artifacts.elastic.co/GPG-KEY-elasticsearch"
+        enabled: yes
+      when: "'Filebeat-Server' in instance_name.stdout"
+      tags: filebeat
+
+    - name: Install Filebeat
+      yum:
+        name: "filebeat-{{ filebeat_version }}"
+        state: present
+        update_cache: yes
+      when: "'Filebeat-Server' in instance_name.stdout"
+      tags: filebeat
 
     - name: Configure Filebeat to read logs
       copy:
@@ -90,6 +108,8 @@
           output.console:
             enabled: true
       when: "'Filebeat-Server' in instance_name.stdout"
+      notify: Restart Filebeat
+      tags: filebeat
 
     - name: Ensure Filebeat service is enabled and started
       systemd:
@@ -97,12 +117,34 @@
         enabled: yes
         state: started
       when: "'Filebeat-Server' in instance_name.stdout"
+      tags: filebeat
+
+    # --- Promtail Tasks ---
+    - name: Download Promtail binary
+      get_url:
+        url: "https://github.com/grafana/loki/releases/download/v{{ promtail_version }}/promtail-linux-amd64.zip"
+        dest: "/tmp/promtail-linux-amd64.zip"
+        mode: "0644"
+      when: "'Promtail-Server' in instance_name.stdout"
+      tags: promtail
+
+    - name: Unarchive Promtail binary
+      unarchive:
+        src: "/tmp/promtail-linux-amd64.zip"
+        dest: "/usr/local/bin/"
+        remote_src: yes
+        creates: "/usr/local/bin/promtail-linux-amd64"
+        mode: "0755"
+      when: "'Promtail-Server' in instance_name.stdout"
+      tags: promtail
 
     - name: Create Promtail config directory
       file:
-        path: /etc/promtail
+        path: "/etc/promtail"
         state: directory
+        mode: "0755"
       when: "'Promtail-Server' in instance_name.stdout"
+      tags: promtail
 
     - name: Configure Promtail to read logs
       copy:
@@ -113,7 +155,7 @@
           positions:
             filename: /tmp/positions.yaml
           clients:
-            - url: http://localhost:3100/loki/api/v1/push
+            - url: "{{ loki_url }}/loki/api/v1/push"
           scrape_configs:
             - job_name: "varlogs"
               static_configs:
@@ -123,27 +165,67 @@
                     job: "test_log"
                     __path__: /var/log/test.log
       when: "'Promtail-Server' in instance_name.stdout"
+      notify: Restart Promtail
+      tags: promtail
 
-- name: Install and configure CloudWatch Agent
-  hosts: localhost
-  become: yes
-  tasks:
-    - name: Install AWS CLI and dependencies
-      yum:
-        name: 
-          - awscli
-          - python3-pip
-        state: present
+    - name: Create Promtail systemd service file
+      copy:
+        dest: "/etc/systemd/system/promtail.service"
+        content: |
+          [Unit]
+          Description=Promtail service
+          After=network.target
 
+          [Service]
+          ExecStart=/usr/local/bin/promtail-linux-amd64 --config.file=/etc/promtail/promtail-config.yml
+          Restart=always
+
+          [Install]
+          WantedBy=multi-user.target
+        mode: "0644"
+      when: "'Promtail-Server' in instance_name.stdout"
+      notify: Reload systemd
+      tags: promtail
+
+    - name: Ensure Promtail service is enabled and started
+      systemd:
+        name: promtail
+        enabled: yes
+        state: started
+      when: "'Promtail-Server' in instance_name.stdout"
+      tags: promtail
+
+    # --- Log Generator Tasks ---
+    - name: Create a log generator script
+      copy:
+        dest: /usr/local/bin/log_generator.sh
+        mode: "0755"
+        content: |
+          #!/bin/bash
+          while true; do
+            echo "$(date) - Test log entry" >> /var/log/test.log
+            sleep 0.1
+          done
+      tags: log_generator
+
+    - name: Start log generator script in background
+      shell: nohup /usr/local/bin/log_generator.sh >/dev/null 2>&1 &
+      args:
+        creates: /var/log/test.log
+      tags: log_generator
+
+    # --- CloudWatch Agent Tasks ---
     - name: Download CloudWatch Agent
       get_url:
-        url: https://amazoncloudwatch-agent.s3.amazonaws.com/amazon-cloudwatch-agent.rpm
-        dest: /tmp/amazon-cloudwatch-agent.rpm
+        url: "https://amazoncloudwatch-agent.s3.amazonaws.com/amazon-cloudwatch-agent.rpm"
+        dest: "/tmp/amazon-cloudwatch-agent.rpm"
+      tags: cloudwatch
 
     - name: Install CloudWatch Agent
       yum:
-        name: /tmp/amazon-cloudwatch-agent.rpm
+        name: "/tmp/amazon-cloudwatch-agent.rpm"
         state: present
+      tags: cloudwatch
 
     - name: Create CloudWatch Agent Configuration
       copy:
@@ -170,9 +252,36 @@
               }
             }
           }
+      notify: Restart CloudWatch Agent
+      tags: cloudwatch
 
-    - name: Start CloudWatch Agent
+    - name: Ensure CloudWatch Agent service is enabled and started
       systemd:
         name: amazon-cloudwatch-agent
         enabled: yes
         state: started
+      tags: cloudwatch
+
+  handlers:
+    - name: Restart Fluent Bit
+      systemd:
+        name: fluent-bit
+        state: restarted
+
+    - name: Restart Filebeat
+      systemd:
+        name: filebeat
+        state: restarted
+
+    - name: Reload systemd
+      command: systemctl daemon-reload
+
+    - name: Restart Promtail
+      systemd:
+        name: promtail
+        state: restarted
+
+    - name: Restart CloudWatch Agent
+      systemd:
+        name: amazon-cloudwatch-agent
+        state: restarted
