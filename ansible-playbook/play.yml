@@ -4,13 +4,10 @@
   vars:
     instance_ip: "169.254.169.254"
   tasks:
-    - name: Retrieve Instance Name from Metadata
-      uri:
-        url: "http://{{ instance_ip }}/latest/meta-data/tags/instance-name"
-        method: GET
-        return_content: yes
-      register: instance_name_result
-      ignore_errors: yes
+    - name: Get instance name from metadata
+      shell: curl -s http://169.254.169.254/latest/meta-data/tags/instance/Name
+      register: instance_name
+      tags: always
 
     - name: Set Instance Name Fact
       set_fact:
@@ -24,7 +21,7 @@
         gpgcheck: yes
         gpgkey: "https://artifacts.elastic.co/GPG-KEY-elasticsearch"
         enabled: yes
-      when: "'Filebeat-Server' in instance_name"
+      when: "'Filebeat-Server' in instance_name.stdout"
       tags: filebeat
 
     - name: Install Filebeat
@@ -32,7 +29,7 @@
         name: "filebeat-{{ filebeat_version }}"
         state: present
         update_cache: yes
-      when: "'Filebeat-Server' in instance_name"
+      when: "'Filebeat-Server' in instance_name.stdout"
       tags: filebeat
 
     - name: Configure Filebeat to read logs
@@ -45,7 +42,7 @@
                 - /var/log/test.log
           output.console:
             enabled: true
-      when: "'Filebeat-Server' in instance_name"
+      when: "'Filebeat-Server' in instance_name.stdout"
       notify: Restart Filebeat
       tags: filebeat
 
@@ -54,7 +51,7 @@
         name: filebeat
         enabled: yes
         state: started
-      when: "'Filebeat-Server' in instance_name"
+      when: "'Filebeat-Server' in instance_name.stdout"
       tags: filebeat
 
   handlers:
