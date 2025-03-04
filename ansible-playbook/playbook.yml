@@ -32,7 +32,7 @@
         content: |
           #!/bin/bash
           while true; do
-            echo "$(date) - Test log entry $(uuidgen)" >> /var/log/test.log
+            echo "$(date) - Test log entry" >> /var/log/test.log
             sleep 0.1
           done
 
