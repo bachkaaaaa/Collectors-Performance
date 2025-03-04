@@ -3,6 +3,7 @@
   become: yes
   vars:
     instance_ip: "169.254.169.254"
+    filebeat_version: "8.12.2"  # Specify the exact version you want to install
   tasks:
     - name: Get instance name from metadata
       shell: curl -s http://169.254.169.254/latest/meta-data/tags/instance/Name
