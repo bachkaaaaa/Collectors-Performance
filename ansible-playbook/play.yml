@@ -1,0 +1,52 @@
+---
+- name: Setup Filebeat on Server
+  hosts: all
+  become: yes
+  tasks:
+    - name: Add Elastic repository for Filebeat
+      yum_repository:
+        name: elastic-8.x
+        description: Elastic repository for 8.x packages
+        baseurl: "https://artifacts.elastic.co/packages/8.x/yum"
+        gpgcheck: yes
+        gpgkey: "https://artifacts.elastic.co/GPG-KEY-elasticsearch"
+        enabled: yes
+      when: "'Filebeat-Server' in instance_name.stdout"
+      tags: filebeat
+
+    - name: Install Filebeat
+      yum:
+        name: "filebeat-{{ filebeat_version }}"
+        state: present
+        update_cache: yes
+      when: "'Filebeat-Server' in instance_name.stdout"
+      tags: filebeat
+
+    - name: Configure Filebeat to read logs
+      copy:
+        dest: /etc/filebeat/filebeat.yml
+        content: |
+          filebeat.inputs:
+            - type: log
+              paths:
+                - /var/log/test.log
+          output.console:
+            enabled: true
+      when: "'Filebeat-Server' in instance_name.stdout"
+      notify: Restart Filebeat
+      tags: filebeat
+
+    - name: Ensure Filebeat service is enabled and started
+      systemd:
+        name: filebeat
+        enabled: yes
+        state: started
+      when: "'Filebeat-Server' in instance_name.stdout"
+      tags: filebeat
+
+  handlers:
+    - name: Restart Filebeat
+      systemd:
+        name: filebeat
+        state: restarted
+
