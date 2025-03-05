@@ -14,9 +14,19 @@
           - unzip
         state: present
         update_cache: yes
-
     - name: Install Fluent Bit
       block:
+        - name: Download libssl1.1 package
+          shell: |
+            wget http://archive.ubuntu.com/ubuntu/pool/main/o/openssl/libssl1.1_1.1.1f-1ubuntu2_amd64.deb -O /tmp/libssl1.1.deb
+          args:
+            creates: /tmp/libssl1.1.deb
+
+        - name: Install libssl1.1 package
+          apt:
+            deb: /tmp/libssl1.1.deb
+            state: present
+
         - name: Import Fluent Bit GPG key
           apt_key:
             url: https://packages.fluentbit.io/fluentbit.key
@@ -32,6 +42,11 @@
           apt:
             name: fluent-bit
             state: present
+        - name: Ensure Fluent Bit service is enabled and started
+          systemd:
+            name: fluent-bit
+            enabled: yes
+            state: started      
       when: "'FluentBit-Server' in instance_name_result.stdout"
       tags: fluent-bit
 
@@ -52,6 +67,12 @@
           apt:
             name: filebeat
             state: present
+        - name: Ensure Filebeat service is enabled and started
+          systemd:
+            name: filebeat
+            enabled: yes
+            state: started
+
       when: "'Filebeat-Server' in instance_name_result.stdout"
       tags: filebeat
 
@@ -67,6 +88,11 @@
             mv promtail-linux-${ARCH} /usr/local/bin/promtail
           args:
             creates: /usr/local/bin/promtail
+        - name: Ensure Promtail service is enabled and started
+          systemd:
+            name: promtail
+            enabled: yes
+            state: started
       when: "'Promtail-Server' in instance_name_result.stdout"
       tags: promtail
 
@@ -88,5 +114,4 @@
             name: log-generator
             enabled: yes
             state: started
-      when: "'Log-Generator' in instance_name_result.stdout"
-      tags: log-generator
+      tags: log-generator 
