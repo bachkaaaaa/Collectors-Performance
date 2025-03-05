@@ -1,6 +1,11 @@
-- hosts: all
+---
+- name: Install and Configure Log Shippers
+  hosts: all
   become: yes
+  vars: 
+    log_file_path: "/var/log/test.log"  
   tasks:
+
     - name: Get instance name from metadata
       shell: curl -s http://169.254.169.254/latest/meta-data/tags/instance/Name
       register: instance_name_result
@@ -14,6 +19,8 @@
           - unzip
         state: present
         update_cache: yes
+
+    # Install Fluent Bit
     - name: Install Fluent Bit
       block:
         - name: Download libssl1.1 package
@@ -42,15 +49,22 @@
           apt:
             name: fluent-bit
             state: present
-        - name: Ensure Fluent Bit service is enabled and started
+
+        - name: Deploy Fluent Bit configuration
+          template:
+            src: templates/fluent-bit.conf.j2
+            dest: /etc/fluent-bit/fluent-bit.conf
+
+        - name: Restart and enable Fluent Bit service
           systemd:
             name: fluent-bit
             enabled: yes
-            state: started      
+            state: restarted
       when: "'FluentBit-Server' in instance_name_result.stdout"
       tags: fluent-bit
 
-    - name: Add Elastic repository for Filebeat
+    # Install Filebeat
+    - name: Install Filebeat
       block:
         - name: Import Elasticsearch GPG key
           apt_key:
@@ -67,18 +81,24 @@
           apt:
             name: filebeat
             state: present
-        - name: Ensure Filebeat service is enabled and started
+
+        - name: Deploy Filebeat configuration
+          template:
+            src: templates/filebeat.yml.j2
+            dest: /etc/filebeat/filebeat.yml
+
+        - name: Restart and enable Filebeat service
           systemd:
             name: filebeat
             enabled: yes
-            state: started
-
+            state: restarted
       when: "'Filebeat-Server' in instance_name_result.stdout"
       tags: filebeat
 
+    # Install Promtail
     - name: Install Promtail
       block:
-        - name: Download Promtail
+        - name: Download and install Promtail
           shell: |
             ARCH=$(dpkg --print-architecture)
             VERSION=$(curl -s https://api.github.com/repos/grafana/loki/releases/latest | grep -oP '"tag_name": "\K(.*)(?=")')
@@ -88,30 +108,38 @@
             mv promtail-linux-${ARCH} /usr/local/bin/promtail
           args:
             creates: /usr/local/bin/promtail
-        - name: Ensure Promtail service is enabled and started
+
+        - name: Deploy Promtail configuration
+          template:
+            src: templates/promtail-config.yml.j2
+            dest: /etc/promtail/promtail-config.yml
+
+        - name: Restart and enable Promtail service
           systemd:
             name: promtail
             enabled: yes
-            state: started
+            state: restarted
       when: "'Promtail-Server' in instance_name_result.stdout"
       tags: promtail
 
+    # Log Generator
     - name: Create Log Generator Script and Service
       block:
-        - name: Copy log generator script
+        - name: Deploy log generator script
           template:
-            src: log_generator.sh.j2
+            src: templates/log_generator.sh.j2
             dest: /usr/local/bin/log_generator.sh
             mode: 0755
 
-        - name: Create log generator systemd service
+        - name: Deploy log generator systemd service
           template:
-            src: log_generator.service.j2
+            src: templates/log_generator.service.j2
             dest: /etc/systemd/system/log-generator.service
 
         - name: Enable and start log generator service
           systemd:
             name: log-generator
             enabled: yes
-            state: started
-      tags: log-generator 
+            state: restarted
+      tags: log-generator
+
