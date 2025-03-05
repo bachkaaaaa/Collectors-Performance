@@ -15,20 +15,6 @@
       register: instance_name
       tags: always
 
-    - name: Install required dependencies
-      yum:
-        name:
-          - unzip
-          - awscli
-          - gpg  
-        state: present
-      tags:
-        - dependencies
-        - fluentbit
-        - filebeat
-        - promtail
-        - cloudwatch
-
     # --- Fluent Bit Tasks ---
     - name: Add Fluent Bit repository
       yum_repository:
