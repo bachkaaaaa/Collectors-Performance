@@ -3,12 +3,28 @@
   become: yes
   vars:
     instance_ip: "169.254.169.254"
-    filebeat_version: "8.12.2"  # Specify the exact version you want to install
+    filebeat_version: "8.12.2"
   tasks:
     - name: Get instance name from metadata
       shell: curl -s http://169.254.169.254/latest/meta-data/tags/instance/Name
       register: instance_name_result
       tags: always
+
+    - name: Print Instance Name
+      debug:
+        var: instance_name_result.stdout
+
+    - name: Install required dependencies
+      yum:
+        name: 
+          - wget
+          - gpg
+        state: present
+
+    - name: Import Elasticsearch GPG key
+      rpm_key:
+        state: present
+        key: https://artifacts.elastic.co/GPG-KEY-elasticsearch
 
     - name: Add Elastic repository for Filebeat
       yum_repository:
@@ -21,13 +37,24 @@
       when: "'Filebeat-Server' in instance_name_result.stdout"
       tags: filebeat
 
+    - name: Update package cache
+      shell: yum clean all && yum makecache
+      args:
+        warn: no
+
     - name: Install Filebeat
       yum:
         name: "filebeat-{{ filebeat_version }}"
         state: present
         update_cache: yes
+      register: filebeat_install
       when: "'Filebeat-Server' in instance_name_result.stdout"
       tags: filebeat
+
+    - name: Debug Filebeat Installation
+      debug:
+        var: filebeat_install
+      when: filebeat_install is defined
 
     - name: Configure Filebeat to read logs
       copy:
