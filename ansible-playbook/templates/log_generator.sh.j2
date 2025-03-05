@@ -1,45 +1,44 @@
 #!/bin/bash
 
-# Ensure script is run with root privileges
 if [[ $EUID -ne 0 ]]; then
    echo "This script must be run as root" 
    exit 1
 fi
 
-# Log file path
+
 LOG_FILE="/var/log/test.log"
 
-# Ensure log directory exists
+
 mkdir -p "$(dirname "$LOG_FILE")"
 
-# Function to generate logs
+
 generate_logs() {
     local log_count=2000
     local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
     
-    # Array of log levels
+    
     local log_levels=("INFO" "WARN" "ERROR" "DEBUG")
     
-    # Array of components
+    
     local components=("WebServer" "DatabaseService" "AuthModule" "NetworkHandler")
     
-    # Generate log entries
+    
     for ((i=1; i<=log_count; i++)); do
-        # Randomly select log level
+        
         local level=${log_levels[$((RANDOM % ${#log_levels[@]}))]}
         
-        # Randomly select component
+        
         local component=${components[$((RANDOM % ${#components[@]}))]}
         
-        # Generate random message
+        
         local message=$(tr -dc 'a-zA-Z0-9' < /dev/urandom | fold -w 50 | head -n 1)
         
-        # Write log entry
+       
         echo "$timestamp [$level] $component: $message" >> "$LOG_FILE"
     done
 }
 
-# Infinite loop to generate logs continuously
+
 while true; do
     generate_logs
     sleep 1
