@@ -32,7 +32,7 @@
           apt:
             name: fluent-bit
             state: present
-      when: "'Fluent-Bit-Server' in instance_name_result.stdout"
+      when: "'FluentBit-Server' in instance_name_result.stdout"
       tags: fluent-bit
 
     - name: Add Elastic repository for Filebeat
