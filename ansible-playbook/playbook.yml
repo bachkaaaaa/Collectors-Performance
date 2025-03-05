@@ -1,0 +1,92 @@
+- hosts: all
+  become: yes
+  tasks:
+    - name: Get instance name from metadata
+      shell: curl -s http://169.254.169.254/latest/meta-data/tags/instance/Name
+      register: instance_name_result
+      tags: always
+
+    - name: Install common packages
+      apt:
+        name:
+          - wget
+          - curl
+          - unzip
+        state: present
+        update_cache: yes
+
+    - name: Install Fluent Bit
+      block:
+        - name: Import Fluent Bit GPG key
+          apt_key:
+            url: https://packages.fluentbit.io/fluentbit.key
+            state: present
+
+        - name: Add Fluent Bit repository
+          apt_repository:
+            repo: "deb https://packages.fluentbit.io/ubuntu/focal focal main"
+            filename: fluentbit
+            state: present
+
+        - name: Install Fluent Bit package
+          apt:
+            name: fluent-bit
+            state: present
+      when: "'Fluent-Bit-Server' in instance_name_result.stdout"
+      tags: fluent-bit
+
+    - name: Add Elastic repository for Filebeat
+      block:
+        - name: Import Elasticsearch GPG key
+          apt_key:
+            url: https://artifacts.elastic.co/GPG-KEY-elasticsearch
+            state: present
+
+        - name: Add Elastic repository
+          apt_repository:
+            repo: "deb https://artifacts.elastic.co/packages/8.x/apt stable main"
+            filename: elastic
+            state: present
+
+        - name: Install Filebeat
+          apt:
+            name: filebeat
+            state: present
+      when: "'Filebeat-Server' in instance_name_result.stdout"
+      tags: filebeat
+
+    - name: Install Promtail
+      block:
+        - name: Download Promtail
+          shell: |
+            ARCH=$(dpkg --print-architecture)
+            VERSION=$(curl -s https://api.github.com/repos/grafana/loki/releases/latest | grep -oP '"tag_name": "\K(.*)(?=")')
+            wget https://github.com/grafana/loki/releases/download/${VERSION}/promtail-linux-${ARCH}.zip
+            unzip promtail-linux-${ARCH}.zip
+            chmod +x promtail-linux-${ARCH}
+            mv promtail-linux-${ARCH} /usr/local/bin/promtail
+          args:
+            creates: /usr/local/bin/promtail
+      when: "'Promtail-Server' in instance_name_result.stdout"
+      tags: promtail
+
+    - name: Create Log Generator Script and Service
+      block:
+        - name: Copy log generator script
+          template:
+            src: log_generator.sh.j2
+            dest: /usr/local/bin/log_generator.sh
+            mode: 0755
+
+        - name: Create log generator systemd service
+          template:
+            src: log_generator.service.j2
+            dest: /etc/systemd/system/log-generator.service
+
+        - name: Enable and start log generator service
+          systemd:
+            name: log-generator
+            enabled: yes
+            state: started
+      when: "'Log-Generator' in instance_name_result.stdout"
+      tags: log-generator

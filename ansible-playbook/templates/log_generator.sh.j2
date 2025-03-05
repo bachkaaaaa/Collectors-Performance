@@ -7,36 +7,36 @@ if [[ $EUID -ne 0 ]]; then
 fi
 
 # Log file path
-LOG_FILE="{{ log_file_path }}"
+LOG_FILE="/var/log/test.log"
 
 # Ensure log directory exists
-mkdir -p $(dirname $LOG_FILE)
+mkdir -p "$(dirname "$LOG_FILE")"
 
 # Function to generate logs
 generate_logs() {
     local log_count=2000
     local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
     
-    # Use Python for efficient log generation
-    python3 - << EOF
-import random
-import string
-
-def generate_log_entry():
-    # Generate a random log message
-    log_levels = ['INFO', 'WARN', 'ERROR', 'DEBUG']
-    components = ['WebServer', 'DatabaseService', 'AuthModule', 'NetworkHandler']
+    # Array of log levels
+    local log_levels=("INFO" "WARN" "ERROR" "DEBUG")
     
-    level = random.choice(log_levels)
-    component = random.choice(components)
-    message = ''.join(random.choices(string.ascii_letters + string.digits, k=50))
+    # Array of components
+    local components=("WebServer" "DatabaseService" "AuthModule" "NetworkHandler")
     
-    return f"{timestamp} [{level}] {component}: {message}"
-
-with open('$LOG_FILE', 'a') as f:
-    for _ in range($log_count):
-        f.write(generate_log_entry() + "\n")
-EOF
+    # Generate log entries
+    for ((i=1; i<=log_count; i++)); do
+        # Randomly select log level
+        local level=${log_levels[$((RANDOM % ${#log_levels[@]}))]}
+        
+        # Randomly select component
+        local component=${components[$((RANDOM % ${#components[@]}))]}
+        
+        # Generate random message
+        local message=$(tr -dc 'a-zA-Z0-9' < /dev/urandom | fold -w 50 | head -n 1)
+        
+        # Write log entry
+        echo "$timestamp [$level] $component: $message" >> "$LOG_FILE"
+    done
 }
 
 # Infinite loop to generate logs continuously
