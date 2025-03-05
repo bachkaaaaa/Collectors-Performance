@@ -1,0 +1,21 @@
+[SERVICE]
+    Flush        5
+    Daemon       Off
+    Log_Level    info
+
+[INPUT]
+    Name        tail
+    Path        {{ log_file_path }}
+    Tag         test_log
+
+[OUTPUT]
+    Name        stdout
+    Match       test_log
+
+# Uncomment and configure for specific output
+# [OUTPUT]
+#     Name            es
+#     Match           test_log
+#     Host            your-elasticsearch-host
+#     Port            9200
+#     Index           test-logs

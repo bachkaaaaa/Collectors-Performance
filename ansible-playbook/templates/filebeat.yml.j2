@@ -1,0 +1,14 @@
+filebeat.inputs:
+- type: log
+  enabled: true
+  paths:
+    - {{ log_file_path }}
+  fields:
+    log_type: test_log
+
+setup.template.name: "test-logs"
+setup.template.pattern: "test-logs-*"
+
+output.elasticsearch:
+  hosts: ["localhost:9200"]
+  index: "test-logs-%{+yyyy.MM.dd}"
