@@ -20,7 +20,6 @@
         name:
           - unzip
           - awscli
-          - python3-pip
           - gpg  
         state: present
       tags:
