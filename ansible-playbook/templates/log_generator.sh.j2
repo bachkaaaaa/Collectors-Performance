@@ -1,45 +1,19 @@
 #!/bin/bash
 
-if [[ $EUID -ne 0 ]]; then
-   echo "This script must be run as root" 
-   exit 1
-fi
-
-
 LOG_FILE="/var/log/test.log"
-
 
 mkdir -p "$(dirname "$LOG_FILE")"
 
-
 generate_logs() {
     local log_count=2000
-    local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
-    
-    
-    local log_levels=("INFO" "WARN" "ERROR" "DEBUG")
-    
-    
-    local components=("WebServer" "DatabaseService" "AuthModule" "NetworkHandler")
-    
     
     for ((i=1; i<=log_count; i++)); do
-        
-        local level=${log_levels[$((RANDOM % ${#log_levels[@]}))]}
-        
-        
-        local component=${components[$((RANDOM % ${#components[@]}))]}
-        
-        
-        local message=$(tr -dc 'a-zA-Z0-9' < /dev/urandom | fold -w 50 | head -n 1)
-        
-       
-        echo "$timestamp [$level] $component: $message" >> "$LOG_FILE"
+        echo "This is log number $i" >> "$LOG_FILE"
     done
 }
-
 
 while true; do
     generate_logs
     sleep 1
 done
+
