@@ -1,8 +1,15 @@
----
 - name: Setup Filebeat on Server
   hosts: all
   become: yes
+  vars:
+    instance_ip: "169.254.169.254"
+    filebeat_version: "8.12.2"  # Specify the exact version you want to install
   tasks:
+    - name: Get instance name from metadata
+      shell: curl -s http://169.254.169.254/latest/meta-data/tags/instance/Name
+      register: instance_name_result
+      tags: always
+
     - name: Add Elastic repository for Filebeat
       yum_repository:
         name: elastic-8.x
@@ -11,7 +18,7 @@
         gpgcheck: yes
         gpgkey: "https://artifacts.elastic.co/GPG-KEY-elasticsearch"
         enabled: yes
-      when: "'Filebeat-Server' in instance_name.stdout"
+      when: "'Filebeat-Server' in instance_name_result.stdout"
       tags: filebeat
 
     - name: Install Filebeat
@@ -19,7 +26,7 @@
         name: "filebeat-{{ filebeat_version }}"
         state: present
         update_cache: yes
-      when: "'Filebeat-Server' in instance_name.stdout"
+      when: "'Filebeat-Server' in instance_name_result.stdout"
       tags: filebeat
 
     - name: Configure Filebeat to read logs
@@ -32,7 +39,7 @@
                 - /var/log/test.log
           output.console:
             enabled: true
-      when: "'Filebeat-Server' in instance_name.stdout"
+      when: "'Filebeat-Server' in instance_name_result.stdout"
       notify: Restart Filebeat
       tags: filebeat
 
@@ -41,7 +48,7 @@
         name: filebeat
         enabled: yes
         state: started
-      when: "'Filebeat-Server' in instance_name.stdout"
+      when: "'Filebeat-Server' in instance_name_result.stdout"
       tags: filebeat
 
   handlers:
@@ -49,4 +56,3 @@
       systemd:
         name: filebeat
         state: restarted
-
