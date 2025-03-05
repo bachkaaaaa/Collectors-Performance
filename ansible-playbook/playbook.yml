@@ -18,7 +18,6 @@
     - name: Install required dependencies
       yum:
         name:
-          - wget
           - unzip
           - awscli
           - python3-pip
